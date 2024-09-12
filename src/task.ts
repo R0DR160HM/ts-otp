@@ -1,3 +1,6 @@
+import { Result } from "./result";
+import { SynchronousPromise } from "./synchronous-promise";
+
 const WORKER_SCRIPT = `
     const base = self;
 
@@ -28,14 +31,25 @@ const WORKER_SCRIPT = `
     }
 `;
 
-function async<T>(context: unknown[], callback: (args: unknown[]) => Promise<T>): Promise<T> {
+abstract class AwaitError {
+
+    public static Timeout = class extends AwaitError {}
+    public static Exit = class extends AwaitError {
+        constructor(public readonly reason: unknown) {
+            super();
+        }
+    }
+
+}
+
+function async<T>(callback: (args: unknown[]) => Promise<T>, context: unknown[] = []): Promise<T> {
     const blobURL = URL.createObjectURL(new Blob(
         [WORKER_SCRIPT],
         { type: 'application/javascript' }
     ));
     const worker = new Worker(blobURL);
 
-    return new Promise((resolve, reject) => {
+    return new SynchronousPromise((resolve, reject) => {
         worker.addEventListener('error', err => {
             reject(err);
             worker.terminate();
@@ -61,4 +75,50 @@ function async<T>(context: unknown[], callback: (args: unknown[]) => Promise<T>)
     })
 }
 
-export const task = { async };
+function awaitWithTimeout<T>(task: Promise<T>, timeout: number): Promise<T> {
+    return new SynchronousPromise((resolve, reject) => {
+        setTimeout(reject, timeout);
+        task
+            .then(resolve)
+            .catch(reject);
+    });
+}
+
+/**
+ * @deprecated
+ * This function only exists to make the library fully compatible with Gleam's implementation.
+ * You don't need to use this, just use JavaScript's aync/awawit syntax.
+ */
+function awaitForever<T>(task: Promise<T>): Promise<T> {
+    return task;
+}
+
+function tryAwait<T>(task: Promise<T>, timeout: number): Promise<Result<T, AwaitError>> {
+    return new SynchronousPromise(resolve => {
+        setTimeout(() => {
+            const timeoutError = new Result.Error(new AwaitError.Timeout());
+            resolve(timeoutError);
+        }, timeout);
+
+        task
+            .then(val => resolve(new Result.Ok(val)))
+            .catch(err => resolve(new Result.Error(new AwaitError.Exit(err))))
+    });
+}
+
+function tryAwaitForever<T>(task: Promise<T>): Promise<Result<T, AwaitError>> {
+    return new SynchronousPromise(resolve => {
+        task
+            .then(val => resolve(new Result.Ok(val)))
+            .catch(err => resolve(new Result.Error(new AwaitError.Exit(err))))
+    });
+}
+
+export const task = {
+    AwaitError,
+    async,
+    await: awaitWithTimeout,
+    awaitForever,
+    tryAwait,
+    tryAwaitForever
+};

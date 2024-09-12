@@ -1,5 +1,9 @@
+import { Result } from "./src/result";
 import { task } from "./src/task"
 
 module.exports = {
-    task    
+    Option,
+    Result,
+    
+    task
 };
