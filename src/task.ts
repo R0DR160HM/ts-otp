@@ -61,4 +61,4 @@ function async<T>(context: unknown[], callback: (args: unknown[]) => Promise<T>)
     })
 }
 
-export const task = { async };
+module.exports = { async };
