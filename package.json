@@ -1,6 +1,6 @@
 {
   "name": "ts-otp",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "An OTP (Open Telecom rmPlatafo) implementation in TypeScript, based on Gleam OTP.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
