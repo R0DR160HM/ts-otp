@@ -4,4 +4,4 @@ This is a TypeScript implementation of the Open Telecom Platform (OTP) based on 
 
 ## Implemented so far
 1. **task**
-    - **async**: Creates a new thread and immediately starts executing the given task in it. It returns a Promise which returns as soon as the task finishes.
+    - **async**: Creates a new thread and immediately starts executing the given task in it. It returns a Promise which resolves as soon as the task finishes.
