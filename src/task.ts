@@ -33,7 +33,7 @@ const WORKER_SCRIPT = `
 
 abstract class AwaitError {
 
-    public static Timeout = class extends AwaitError {}
+    public static Timeout = class extends AwaitError { }
     public static Exit = class extends AwaitError {
         constructor(public readonly reason: unknown) {
             super();
@@ -43,6 +43,14 @@ abstract class AwaitError {
 }
 
 function async<T>(callback: (args: unknown[]) => Promise<T>, context: unknown[] = []): Promise<T> {
+    try {
+        return asyncRaw(callback, context);
+    } catch (err) {
+        return callback(context)
+    }
+}
+
+function asyncRaw<T, K extends object>(callback: (args: K) => Promise<T>, context: unknown[] = []): Promise<T> {
     const blobURL = URL.createObjectURL(new Blob(
         [WORKER_SCRIPT],
         { type: 'application/javascript' }
