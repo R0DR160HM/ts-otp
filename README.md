@@ -6,6 +6,8 @@ This is a TypeScript implementation of the Open Telecom Platform (OTP) based on 
 
 ### 1. task
 
+Tasks are represented as Promises. But unlike native Promises, they are actually multithreaded.
+
 #### async
 
 Spawn a task process that calls a given function in order to perform some work. The result of this function is send back to the parent and can be received using the `await` function.
