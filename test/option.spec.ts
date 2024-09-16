@@ -1,16 +1,16 @@
-import { describe, expect, test } from "@jest/globals";
+import { describe, it, expect } from '@jest/globals'
 import { Option } from "../src/option";
 
 describe(Option.name, () => {
 
-    test(`${Option.Some.name} should store a value`, () => {
+    it(`${Option.Some.name} should store a value`, () => {
         const value = 42;
         const some = new Option.Some(value);
         expect(some.value).toBe(value);
         expect(some).toBeInstanceOf(Option)
     });
 
-    test(`${Option.None.name} should not store a value`, () => {
+    it(`${Option.None.name} should not store a value`, () => {
         const none = new Option.None() as any;
         expect(none['value']).toBeUndefined();
         expect(none).toBeInstanceOf(Option)
@@ -18,7 +18,7 @@ describe(Option.name, () => {
 
     describe(Option.from.name, () => {
 
-        test('should return a Some instance if a value is informed', () => {
+        it('should return a Some instance if a value is informed', () => {
             expect(Option.from(42)).toBeInstanceOf(Option.Some);
             expect(Option.from(0)).toBeInstanceOf(Option.Some);
             expect(Option.from('FOO')).toBeInstanceOf(Option.Some);
@@ -30,7 +30,7 @@ describe(Option.name, () => {
             expect(Option.from(() => { })).toBeInstanceOf(Option.Some);
         });
 
-        test('should return a None instance if a null value is informed', () => {
+        it('should return a None instance if a null value is informed', () => {
             expect(Option.from(null)).toBeInstanceOf(Option.None);
             expect(Option.from(undefined)).toBeInstanceOf(Option.None);
         });

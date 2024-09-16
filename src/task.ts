@@ -1,5 +1,4 @@
 import { Result } from "./result";
-import { SynchronousPromise } from "./synchronous-promise";
 
 const WORKER_SCRIPT = `
     const base = self;
@@ -42,7 +41,10 @@ abstract class AwaitError {
 
 }
 
-function async<T>(callback: (args: unknown[]) => Promise<T>, context: unknown[] = []): Promise<T> {
+function async<T, K extends object>(callback: (args: K) => Promise<T>, context: K = {} as any): Promise<T> {
+    if (!window?.URL?.createObjectURL || !window?.Worker?.prototype?.postMessage) {
+        return callback(context);
+    }
     try {
         return asyncRaw(callback, context);
     } catch (err) {
@@ -50,14 +52,14 @@ function async<T>(callback: (args: unknown[]) => Promise<T>, context: unknown[] 
     }
 }
 
-function asyncRaw<T, K extends object>(callback: (args: K) => Promise<T>, context: unknown[] = []): Promise<T> {
+function asyncRaw<T, K extends object>(callback: (args: K) => Promise<T>, context: K): Promise<T> {
     const blobURL = URL.createObjectURL(new Blob(
         [WORKER_SCRIPT],
         { type: 'application/javascript' }
     ));
     const worker = new Worker(blobURL);
 
-    return new SynchronousPromise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         worker.addEventListener('error', err => {
             reject(err);
             worker.terminate();
@@ -84,7 +86,7 @@ function asyncRaw<T, K extends object>(callback: (args: K) => Promise<T>, contex
 }
 
 function awaitWithTimeout<T>(task: Promise<T>, timeout: number): Promise<T> {
-    return new SynchronousPromise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         setTimeout(reject, timeout);
         task
             .then(resolve)
@@ -102,7 +104,7 @@ function awaitForever<T>(task: Promise<T>): Promise<T> {
 }
 
 function tryAwait<T>(task: Promise<T>, timeout: number): Promise<Result<T, AwaitError>> {
-    return new SynchronousPromise(resolve => {
+    return new Promise(resolve => {
         setTimeout(() => {
             const timeoutError = new Result.Error(new AwaitError.Timeout());
             resolve(timeoutError);
@@ -115,7 +117,7 @@ function tryAwait<T>(task: Promise<T>, timeout: number): Promise<Result<T, Await
 }
 
 function tryAwaitForever<T>(task: Promise<T>): Promise<Result<T, AwaitError>> {
-    return new SynchronousPromise(resolve => {
+    return new Promise(resolve => {
         task
             .then(val => resolve(new Result.Ok(val)))
             .catch(err => resolve(new Result.Error(new AwaitError.Exit(err))))
