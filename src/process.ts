@@ -34,7 +34,7 @@ const WORKER_SCRIPT = `
     }
 `;
 
-const workerPool = new Array<Worker>();
+const subjectPool = new Array<Worker>();
 const alocatedThreads = new Map<Pid, Worker>();
 
 // abstract class CallError {
@@ -105,29 +105,29 @@ function start<T, K>(implementation: (that: K) => Promise<T>, context: K): Pid {
  */
 function _start<T, K>(implementation: (that: K) => Promise<T>, context: K, /* link: boolean */): Pid {
     let blobURL: string;
-    let worker = workerPool.shift()!;
-    if (!worker) {
+    let subject = subjectPool.shift()!;
+    if (!subject) {
         blobURL = URL.createObjectURL(new Blob([WORKER_SCRIPT], { type: 'application/javascript' }));
-        worker = new Worker(blobURL);
+        subject = new Worker(blobURL);
     }
 
     const pid = new Pid();
 
-    worker.addEventListener('error', () => {
+    subject.addEventListener('error', () => {
         alocatedThreads.delete(pid);
-        const index = workerPool.indexOf(worker);
+        const index = subjectPool.indexOf(subject);
         if (index >= 0) {
-            workerPool.splice(index, 1);
+            subjectPool.splice(index, 1);
         }
-        worker.terminate();
+        subject.terminate();
         if (blobURL) {
             URL.revokeObjectURL(blobURL);
         }
     });
 
-    alocatedThreads.set(pid, worker);
+    alocatedThreads.set(pid, subject);
 
-    worker.postMessage({
+    subject.postMessage({
         command: 'run',
         args: [{
             args: context,
@@ -139,17 +139,18 @@ function _start<T, K>(implementation: (that: K) => Promise<T>, context: K, /* li
 }
 
 function kill(pid: Pid): void {
-    const worker = alocatedThreads.get(pid);
-    if (worker) {
-        worker.addEventListener('message', ev => {
+    const subject = alocatedThreads.get(pid);
+    if (subject) {
+        subject.onmessage = ev => {
             if (ev.data?.status === 'done') {
                 alocatedThreads.delete(pid);
-                if (!workerPool.includes(worker)) {
-                    workerPool.push(worker);
+                if (!subjectPool.includes(subject)) {
+                    subjectPool.push(subject);
                 }
+                subject.onmessage = null;
             }
-        });
-        worker.postMessage({ command: 'kill' });
+        };
+        subject.postMessage({ command: 'kill' });
     }
 }
 
