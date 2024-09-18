@@ -29,6 +29,7 @@ const WORKER_SCRIPT = `
 
             case "kill":
                 func = null;
+                Θ__otp_pid = null;
                 self.postMessage({ status: "done" });
                 break;
 
