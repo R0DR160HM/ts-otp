@@ -18,13 +18,24 @@ const WORKER_SCRIPT = `
                 break;
 
             case "run":
-                func(self.job.args)
-                    .then(function (value) {
-                        self.postMessage({ status: "ok", value });
-                    })
-                    .catch(function (error) {
-                        self.postMessage({ status: "error", error });
-                    });
+                try {
+                    const response = func(self.job.args);
+                    if (response instanceof Promise) {
+                        response
+                            .then(function (value) {
+                                self.postMessage({ status: "ok", value });
+                            })
+                            .catch(function (error) {
+                                self.postMessage({ status: "error", error });
+                            });
+                    } else if (response instanceof Error) {
+                        self.postMessage({ status: "error", error: response });
+                    } else {
+                        self.postMessage({ status: "ok", value: response });
+                    }
+                } catch (error) {
+                    self.postMessage({ status: "error", error });
+                }
                 break;
 
             case "kill":
@@ -45,9 +56,26 @@ const WORKER_SCRIPT = `
     }
 `;
 
+/**
+ * A pool containing "dead" (iddle) Workers, so that the start() function can grab one of them
+ * instead of creating a new one, and thus avoiding the overhead of creating a new worker at
+ * the start of every Process and terminating it at the end.
+ */
 const subjectPool = new Array<Worker>();
-const alocatedThreads = new Map<Pid, Worker>();
+
+/**
+ * A relational map with all the currently active Pids and their respective Processes.
+ */
+const activeProcesses = new Map<Pid, Worker>();
+
+/**
+ * Named Pids so that they can be more easily accessible from anywhere
+ */
 const nameRegistry = new Map<string, Pid>();
+
+/**
+ * The name is self-explanatory
+ */
 const activeTimers = new Array<Timer>();
 
 /**
@@ -56,24 +84,39 @@ const activeTimers = new Array<Timer>();
 class FakeWorker<T, K> {
     private listeners: any[] = [];
 
-    constructor(private implementation: (that: T) => Promise<K>) {}
+    constructor(private implementation: (that: T) => K | Promise<K>) {}
 
     public addEventListener(_event: 'message', listener: any) {
         this.listeners.push(listener);
     }
 
-    public postMessage(message: { command: 'run'; args: { args: T }[] }) {
-        this.implementation(message.args[0].args)
-            .then((value) => {
-                for (const listener of this.listeners) {
-                    listener({ data: { status: 'ok', value } });
+    private emit(data: any) {
+        for (const listener of this.listeners) {
+            listener({ data });
+        }
+    }
+
+    public postMessage(message: { command: string; args: { args: T }[] }) {
+        if (message.command === 'run') {
+            try {
+                const response = this.implementation(message.args[0].args);
+                if (response instanceof Promise) {
+                    response
+                        .then((value) => {
+                            this.emit({ status: 'ok', value });
+                        })
+                        .catch((error) => {
+                            this.emit({ status: 'error', error });
+                        });
+                } else if (response instanceof Error) {
+                    this.emit({ status: 'error', error: response });
+                } else {
+                    this.emit({ status: 'ok', value: response });
                 }
-            })
-            .catch((error) => {
-                for (const listener of this.listeners) {
-                    listener({ data: { status: 'error', error } });
-                }
-            });
+            } catch (error) {
+                this.emit({ status: 'error', error });
+            }
+        }
     }
 }
 
@@ -126,7 +169,7 @@ class Pid {
         this.id = ++Pid.lastId;
     }
     public get subject(): Worker | null {
-        return alocatedThreads.get(this) || null;
+        return activeProcesses.get(this) || null;
     }
 }
 
@@ -144,7 +187,7 @@ class Pid {
 //     ) { }
 // }
 
-function start<T, K>(implementation: (that: K) => Promise<T>): Pid {
+function start<T, K>(implementation: (that: K) => T | Promise<T>): Pid {
     if (
         !window?.URL?.createObjectURL ||
         !window?.Worker?.prototype?.postMessage
@@ -158,10 +201,10 @@ function start<T, K>(implementation: (that: K) => Promise<T>): Pid {
     }
 }
 
-function _fakeStart<T, K>(implementation: (that: K) => Promise<T>): Pid {
+function _fakeStart<T, K>(implementation: (that: K) => T | Promise<T>): Pid {
     const pid = new Pid();
     const worker = new FakeWorker(implementation);
-    alocatedThreads.set(pid, worker as any);
+    activeProcesses.set(pid, worker as any);
     return pid;
 }
 
@@ -169,7 +212,7 @@ function _fakeStart<T, K>(implementation: (that: K) => Promise<T>): Pid {
  * @todo implement link
  */
 function _start<T, K>(
-    implementation: (that: K) => Promise<T>
+    implementation: (that: K) => T | Promise<T>
     /* link: boolean */
 ): Pid {
     let blobURL: string;
@@ -184,7 +227,7 @@ function _start<T, K>(
     const pid = new Pid();
 
     subject.addEventListener('error', () => {
-        alocatedThreads.delete(pid);
+        activeProcesses.delete(pid);
         const index = subjectPool.indexOf(subject);
         if (index >= 0) {
             subjectPool.splice(index, 1);
@@ -195,7 +238,7 @@ function _start<T, K>(
         }
     });
 
-    alocatedThreads.set(pid, subject);
+    activeProcesses.set(pid, subject);
 
     subject.postMessage({
         command: 'setup',
@@ -211,23 +254,23 @@ function _start<T, K>(
 }
 
 function kill(pid: Pid): void {
-    const subject = alocatedThreads.get(pid);
+    const subject = activeProcesses.get(pid);
     if (subject) {
         subject.onmessage = (ev) => {
             if (ev.data?.status === 'done') {
-                alocatedThreads.delete(pid);
+                activeProcesses.delete(pid);
                 if (!subjectPool.includes(subject)) {
                     subjectPool.push(subject);
                 }
                 subject.onmessage = null;
             }
         };
-        subject.postMessage({ command: 'kill' });
+        subject.postMessage({ command: 'kill', args: [{}] });
     }
 }
 
 function register(pid: Pid, name: string): Result<null, null> {
-    if (!alocatedThreads.has(pid)) {
+    if (!activeProcesses.has(pid)) {
         return new Result.Error(null);
     }
     if (nameRegistry.has(name)) {
@@ -255,13 +298,13 @@ function unregister(name: string): Result<null, null> {
 function named(name: string): Result<Pid, null> {
     const pid = nameRegistry.get(name);
     if (pid) {
-        return new Result.Error(null);
+        return new Result.Ok(pid);
     }
-    return new Result.Ok(pid);
+    return new Result.Error(null);
 }
 
 function isAlive(a: Pid): boolean {
-    return alocatedThreads.has(a);
+    return activeProcesses.has(a);
 }
 
 function send<T>(subject: Worker, message: T): void {
@@ -309,7 +352,9 @@ function call<T, K>(
     timeout: number
 ): Promise<K> {
     return new Promise((resolve, reject) => {
+        let answered = false;
         subject.addEventListener('message', (ev) => {
+            answered = true;
             if (ev.data.status === 'ok') {
                 resolve(ev.data.value);
             } else if (ev.data.status === 'error') {
@@ -319,9 +364,15 @@ function call<T, K>(
 
         send(subject, makeRequest);
 
-        setTimeout(() => {
-            throw new Error('Process crashed!');
-        }, timeout);
+        if (timeout !== Infinity) {
+            setTimeout(() => {
+                if (!answered) {
+                    const err = new Error('Process crashed!');
+                    reject(err);
+                    throw err;
+                }
+            }, timeout);
+        }
     });
 }
 
@@ -358,13 +409,16 @@ export const process = {
 
     start,
     kill,
+    isAlive,
+
     register,
     unregister,
     named,
-    isAlive,
+
     send,
     sendAfter,
     cancelTimer,
+
     call,
     tryCall
 };
