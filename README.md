@@ -18,11 +18,65 @@ In incompatible environments (such as Node) all processes will gracefully degrad
 
 ## Implemented so far
 
-### 1. task
+### 🧬 Process
 
-Tasks are represented as Promises. But unlike native Promises, they are actually multithreaded.
+Processes are the building block for all other models, they are represented as Promises due to their asynchronous nature, but they are actually run on a different thread. Working directly with processes should be avoided in favor of other models.
 
-**Important**: So far, only tasks have been implemented and they currently work standalone, that is, directly interfacing with the runtime Web Worker API. This behaviour will change once the `process` object is fully implemented.
+#### Pid
+
+The Process identifier (Pid) is an object used to manage different processes. Every active process has a Pid, which contains an unique numeric ID and a reference to a Web Worker. **You should interact with neither**, and simply use the Pid object itself as an abstraction for the process.
+
+#### start
+
+Starts a new process with the informed code implementation and returns a new Pid.
+
+### kill
+
+Sends a signal to the process gently asking it to commit _seppuku_. Once the process is killed, the link between it and the Pid is broken.
+
+**Implementation note (feel free to skip):** Started threads are never **actually** killed, unless an error which they can not recover from happens. Routinely, they only have their caches cleaned and their references nulled and then are labelled as "iddle" in order to be reused the next time you call the start() function. This is done to avoid the massive overhead which comes from terminating threads and starting new ones in JavaScript.
+
+### isAlive
+
+Informes whether a given process is still active.
+
+### register
+
+Gives a name to process, so that you can easily find it later. A process can only have one name and a name can only reference a single process.
+
+### unregister
+
+Removes the name from a process.
+
+### named
+
+Searches for a process with the given name.
+
+### send
+
+Sends a message to a process.
+
+### sendAfter
+
+Sends a message to a process after the specified delay. It returns a Timer which can be used to cancel the operation before it finishes (see `cancelTimer`).
+
+### cancelTimer
+
+Cancels a timed operation if it has not completed yet (see `sendAfter`).
+
+### call
+
+Sends a message to a process and waits for a reponse within the specified time.
+
+### tryCall
+
+Sends a message to a process and waits for a response within the specified time. Unlike `call`, with this function the Promise is guaranteed to resolve, even if with an error.
+
+---
+
+### 📋 Task
+
+Tasks represent simple functions which can only receive inputs once and only outputs once
 
 #### async
 
