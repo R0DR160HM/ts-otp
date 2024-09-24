@@ -1,6 +1,6 @@
 # ts-otp
 
-This is a TypeScript implementation of the Open Telecom Platform (OTP) based on the [Gleam OTP](https://github.com/gleam-lang/otp), aiming on making multithreading easier in the JS/TS ecosystem.
+This is a TypeScript implementation of the Open Telecom Platform (OTP) inspired on the [Gleam OTP](https://github.com/gleam-lang/otp), aiming on making multithreading easier in the JS/TS ecosystem.
 
 ## Installing
 
@@ -29,6 +29,7 @@ The Process identifier (Pid) is an object used to manage different processes. Ev
 #### start
 
 Starts a new process with the informed code implementation and returns a new Pid.
+
 ```
 const pid = process.start(foo => foo * 2);
 ```
@@ -36,6 +37,7 @@ const pid = process.start(foo => foo * 2);
 ### kill
 
 Sends a signal to the process gently asking it to commit _seppuku_. Once the process is killed, the link between it and the Pid is broken.
+
 ```
 process.kill(pid);
 ```
@@ -45,6 +47,7 @@ process.kill(pid);
 ### isAlive
 
 Informes whether a given process is still active.
+
 ```
 if (process.isAlive(pid)) {
     process.kill(pid);
@@ -54,6 +57,7 @@ if (process.isAlive(pid)) {
 ### register
 
 Gives a name to process, so that you can easily find it later. A process can only have one name and a name can only reference a single process.
+
 ```
 if (process.register(pid, 'number duplicator') instanceof Result.Ok) {
     // 😁
@@ -65,6 +69,7 @@ if (process.register(pid, 'number duplicator') instanceof Result.Ok) {
 ### unregister
 
 Removes the name from a process.
+
 ```
 process.unregister('my old number duplicator');
 ```
@@ -72,9 +77,10 @@ process.unregister('my old number duplicator');
 ### named
 
 Searches for a process with the given name.
+
 ```
 const res = process.named('number duplicator');
-if (res instanceof Result.Ok) {
+if (res instanceof Option.Some) {
     const pid = res.value;
 }
 ```
@@ -82,6 +88,7 @@ if (res instanceof Result.Ok) {
 ### send
 
 Sends a message to a process.
+
 ```
 if (pid.subject) {
     process.send(pid.subject, 100);
@@ -91,6 +98,7 @@ if (pid.subject) {
 ### sendAfter
 
 Sends a message to a process after the specified delay. It returns a Timer which can be used to cancel the operation before it finishes (see `cancelTimer`).
+
 ```
 let myTimer: Timer;
 if (pid.subject) {
@@ -101,6 +109,7 @@ if (pid.subject) {
 ### cancelTimer
 
 Cancels a timed operation if it has not completed yet (see `sendAfter`).
+
 ```
 process.cancelTimer(myTimer);
 ```
@@ -108,6 +117,7 @@ process.cancelTimer(myTimer);
 ### call
 
 Sends a message to a process and waits for a reponse within the specified time.
+
 ```
 const pid = process.start(foo => foo * 2);
 process.call(pid.subject!, 100, 500)
@@ -122,6 +132,7 @@ process.call(pid.subject!, 100, 500)
 ### tryCall
 
 Sends a message to a process and waits for a response within the specified time. Unlike `call`, with this function the Promise is guaranteed to resolve, even if with an error.
+
 ```
 const pid = process.start(foo => foo * 2);
 process.tryCall(pid.subject!, 100, 500)
@@ -143,6 +154,7 @@ Tasks represent simple functions which can only receive inputs once and only out
 #### async
 
 Spawn a task process that calls a given function in order to perform some work. The result of this function is send back to the parent and can be received using the `await` function.
+
 ```
 const myTask = task.async(foo => foo * 2, 100);
 ```
@@ -150,23 +162,17 @@ const myTask = task.async(foo => foo * 2, 100);
 #### await
 
 Wait for the value computed by a task. If the a value is not received before the timeout has elapsed or if the task process crashes then this function rejects.
+
 ```
 task.await(myTask, 500)
 .then(response => console.log(response)) // 200
 .catch(error => console.error(error));
 ```
 
-#### awaitForever
-
-Does literally nothing and only existis to keep it compatible with Gleam OTP. If you want to await for a task without setting a timeout, just use JavaScript's native `await` syntax.
-```
-const response = await myTask;
-console.log(response); // 200
-```
-
 #### tryAwait
 
 Wait for the value computed by a task. If the a value is not received before the timeout has elapsed or if the task process crashes then an error is returned.
+
 ```
 task.tryAwait(myTask, 500)
 .then(response => {
@@ -183,6 +189,7 @@ task.tryAwait(myTask, 500)
 #### tryAwaitForever
 
 Wait endlessly for the value computed by a task. Be Careful! This function does not return until there is a value to receive. If a value is not received then the process will be stuck waiting forever.
+
 ```
 task.tryAwaitForever(myTask)
 .then(response => {

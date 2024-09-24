@@ -1,3 +1,4 @@
+import { Option } from './option';
 import { Result } from './result';
 
 const WORKER_SCRIPT = `
@@ -84,7 +85,7 @@ const activeTimers = new Array<Timer>();
 class FakeWorker<T, K> {
     private listeners: any[] = [];
 
-    constructor(private implementation: (that: T) => K | Promise<K>) {}
+    constructor(private implementation: (that: T) => K | Promise<K>) { }
 
     public addEventListener(_event: 'message', listener: any) {
         this.listeners.push(listener);
@@ -99,7 +100,7 @@ class FakeWorker<T, K> {
     public postMessage(message: { command: string; args: { args: T }[] }) {
         if (message.command === 'run') {
             try {
-                const response = this.implementation(message.args[0].args);
+                const response = this.implementation({ ...message?.args[0]?.args });
                 if (response instanceof Promise) {
                     response
                         .then((value) => {
@@ -126,7 +127,7 @@ abstract class CallError {
             super();
         }
     };
-    public static CallTimeout = class extends CallError {};
+    public static CallTimeout = class extends CallError { };
 }
 
 class Timer {
@@ -144,7 +145,7 @@ class Timer {
 }
 
 abstract class Cancelled {
-    public static TimerNotFound = class extends Cancelled {};
+    public static TimerNotFound = class extends Cancelled { };
     public static Cancelled = class extends Cancelled {
         constructor(public readonly timeRemaining: number) {
             super();
@@ -152,15 +153,15 @@ abstract class Cancelled {
     };
 }
 
-// abstract class ExitReason {
-//     public static Normal = class extends ExitReason { }
-//     public static Killed = class extends ExitReason { }
-//     public static Abnormal = class extends ExitReason {
-//         constructor(public readonly reason: string) {
-//             super();
-//         }
-//     }
-// }
+abstract class ExitReason {
+    public static Normal = class extends ExitReason { }
+    public static Killed = class extends ExitReason { }
+    public static Abnormal = class extends ExitReason {
+        constructor(public readonly reason: string) {
+            super();
+        }
+    }
+}
 
 class Pid {
     private static lastId = 0;
@@ -173,6 +174,45 @@ class Pid {
     }
 }
 
+abstract class NotRegistrable {
+    public static InactiveProcess = class extends NotRegistrable {
+        constructor(public readonly pid: Pid) {
+            super();
+        }
+    }
+    public static NameAlreadyTaken = class extends NotRegistrable {
+        constructor(public readonly name: string) {
+            super();
+        }
+    }
+    public static ProcessAlreadyRegistered = class extends NotRegistrable {
+        constructor(public readonly pid: Pid) {
+            super();
+        }
+    }
+    public static InvalidName = class extends NotRegistrable {
+        constructor(public readonly name: string) {
+            super();
+        }
+    }
+}
+
+class Selector<T> {
+
+    private listeners: ((message: T) => void)[] = []
+
+    public postMessage(message: T) {
+        for (const listener of this.listeners) {
+            listener(message);
+        }
+    }
+
+    protected addListener(listener: (message: T) => void) {
+        this.listeners.push(listener);
+    }
+
+}
+
 // class ExitMessage {
 //     constructor(
 //         public readonly pid: Pid,
@@ -180,12 +220,14 @@ class Pid {
 //     ) { }
 // }
 
-// class ProcessDown {
-//     constructor(
-//         public readonly pid: Pid,
-//         public readonly reason: unknown
-//     ) { }
-// }
+class ProcessDown {
+    constructor(
+        public readonly pid: Pid,
+        public readonly reason: ExitReason
+    ) { }
+}
+
+class ProcessMonitor extends Promise<ProcessDown> { }
 
 function start<T, K>(implementation: (that: K) => T | Promise<T>): Pid {
     if (
@@ -269,20 +311,20 @@ function kill(pid: Pid): void {
     }
 }
 
-function register(pid: Pid, name: string): Result<null, null> {
+function register(pid: Pid, name: string): Result<null, NotRegistrable> {
     if (!activeProcesses.has(pid)) {
-        return new Result.Error(null);
+        return new Result.Error(new NotRegistrable.InactiveProcess(pid));
     }
     if (nameRegistry.has(name)) {
-        return new Result.Error(null);
+        return new Result.Error(new NotRegistrable.NameAlreadyTaken(name));
     }
     for (const registeredPid of nameRegistry.values()) {
         if (registeredPid === pid) {
-            return new Result.Error(null);
+            return new Result.Error(new NotRegistrable.ProcessAlreadyRegistered(pid));
         }
     }
     if (!name || name === 'undefined') {
-        return new Result.Error(null);
+        return new Result.Error(new NotRegistrable.InvalidName(name));
     }
     nameRegistry.set(name, pid);
     return new Result.Ok(null);
@@ -295,12 +337,9 @@ function unregister(name: string): Result<null, null> {
     return new Result.Error(null);
 }
 
-function named(name: string): Result<Pid, null> {
+function named(name: string): Option<Pid> {
     const pid = nameRegistry.get(name);
-    if (pid) {
-        return new Result.Ok(pid);
-    }
-    return new Result.Error(null);
+    return Option.from(pid);
 }
 
 function isAlive(a: Pid): boolean {
@@ -320,14 +359,7 @@ function send<T>(subject: Worker, message: T): void {
 
 function sendAfter<T>(subject: Worker, delay: number, message: T): Timer {
     return new Timer(delay, () => {
-        subject.postMessage({
-            command: 'run',
-            args: [
-                {
-                    args: message
-                }
-            ]
-        });
+        send(subject, message);
     });
 }
 
@@ -340,6 +372,21 @@ function cancelTimer(timer: Timer) {
         return new Cancelled.Cancelled(timeRemaining);
     }
     return new Cancelled.TimerNotFound();
+}
+
+function receive<T>(from: Worker, timeout: number): Promise<Result<T, null>> {
+    return new Promise(resolve => {
+
+        from.addEventListener('message', message => {
+            if (message.data.status === 'ok') {
+                resolve(message.data.value);
+            }
+        })
+
+        if (timeout !== Infinity) {
+            setTimeout(() => resolve(new Result.Error(null)), timeout);
+        }
+    });
 }
 
 /**
@@ -398,14 +445,68 @@ function tryCall<T, K>(
     });
 }
 
+function selecting<T>(selector: Selector<T>, subject: Worker, transform: (message: Result<unknown, unknown>) => T): Selector<T> {
+    subject.addEventListener('message', message => {
+        if (message.data.status === 'ok') {
+            const value = transform(new Result.Ok(message.data.value));
+            selector.postMessage(value);
+        } else if (message.data.status === 'error') {
+            const value = transform(new Result.Error(message.data.detail));
+            selector.postMessage(value);
+        }
+    });
+    return selector;
+}
+
+function selectingProcessDown<T>(selector: Selector<T>, monitor: ProcessMonitor, mapping: (pd: ProcessDown) => T): Selector<T> {
+    monitor.then(value => {
+        const mappedValue = mapping(value);
+        selector.postMessage(mappedValue);
+    })
+    return selector;
+}
+
+function select<T>(from: Selector<T>, within: number): Promise<Result<T, null>> {
+    return new Promise(resolve => {
+        setTimeout(() => {
+            resolve(new Result.Error(null))
+        }, within);
+        from['addListener'](message => {
+            resolve(new Result.Ok(message));
+        });
+    })
+}
+
+function selectForever<T>(from: Selector<T>): Promise<T> {
+    return new Promise(resolve => from['addListener'](resolve));
+}
+
+function monitorProcess(pid: Pid): ProcessMonitor {
+    return new ProcessMonitor(resolve => {
+        if (pid.subject) {
+            pid.subject.addEventListener('message', message => {
+                if (message.data.status === 'done') {
+                    resolve(new ProcessDown(pid, new ExitReason.Killed()));
+                }
+            })
+            pid.subject.addEventListener('error', (err) => {
+                resolve(new ProcessDown(pid, new ExitReason.Abnormal(err?.toString())));
+            })
+        }
+    });
+}
+
 export const process = {
     CallError,
     Timer,
     Cancelled,
-    // ExitReason,
+    ExitReason,
     // ExitMessage,
     Pid,
-    // ProcessDown,
+    ProcessDown,
+    Selector,
+
+    NotRegistrable,
 
     start,
     kill,
@@ -418,7 +519,13 @@ export const process = {
     send,
     sendAfter,
     cancelTimer,
-
+    receive,
     call,
-    tryCall
+    tryCall,
+
+    select,
+    selectForever,
+    selecting,
+    selectingProcessDown,
+    monitorProcess
 };

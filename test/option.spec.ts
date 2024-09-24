@@ -37,4 +37,18 @@ describe(Option.name, () => {
 
     });
 
+    describe(Option.prototype.unwrap.name, () => {
+
+        it('should return the value if it is an instance of Some', () => {
+            const some = new Option.Some('foo');
+            expect(some.unwrap('bar')).toEqual('foo');
+        });
+
+        it('should return the defaultValue if it is an instance of None', () => {
+            const none = new Option.None();
+            expect(none.unwrap('bar')).toEqual('bar');
+        });
+
+    })
+
 });

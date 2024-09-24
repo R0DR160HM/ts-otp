@@ -13,4 +13,11 @@ export abstract class Option<T> {
             : new Option.Some(value);
     }
 
+    public unwrap<T>(defaultValue: T): T {
+        if (this instanceof Option.Some) {
+            return this.value;
+        }
+        return defaultValue;
+    }
+
 }

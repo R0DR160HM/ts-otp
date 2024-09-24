@@ -19,4 +19,11 @@ export abstract class Result<T, K> {
         }
     }
 
+    public unwrap<T>(defaultValue: T): T {
+        if (this instanceof Result.Ok) {
+            return this.value;
+        }
+        return defaultValue;
+    }
+
 }

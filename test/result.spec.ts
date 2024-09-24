@@ -37,4 +37,18 @@ describe(Result.name, () => {
         });
     });
 
+    describe(Result.prototype.unwrap.name, () => {
+
+        it('should return the value if it is an instance of Ok', () => {
+            const ok = new Result.Ok('foo');
+            expect(ok.unwrap('bar')).toEqual('foo');
+        });
+
+        it('should return the defaultValue if it is an insance of Error', () => {
+            const error = new Result.Error('foo');
+            expect(error.unwrap('bar')).toEqual('bar');
+        });
+
+    });
+
 });

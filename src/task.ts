@@ -2,7 +2,7 @@ import { Result } from './result';
 import { process } from './process';
 
 abstract class AwaitError {
-    public static Timeout = class extends AwaitError {};
+    public static Timeout = class extends AwaitError { };
     public static Exit = class extends AwaitError {
         constructor(public readonly reason: unknown) {
             super();
@@ -26,15 +26,6 @@ function awaitWithTimeout<T>(task: Promise<T>, timeout: number): Promise<T> {
         setTimeout(reject, timeout);
         task.then(resolve).catch(reject);
     });
-}
-
-/**
- * @deprecated
- * This function only exists to make the library fully compatible with Gleam's implementation.
- * You don't need to use this, just use JavaScript's aync/awawit syntax.
- */
-function awaitForever<T>(task: Promise<T>): Promise<T> {
-    return task;
 }
 
 function tryAwait<T>(
@@ -65,7 +56,6 @@ export const task = {
     AwaitError,
     async,
     await: awaitWithTimeout,
-    awaitForever,
     tryAwait,
     tryAwaitForever
 };
