@@ -80,6 +80,11 @@ const nameRegistry = new Map<string, Pid>();
 const activeTimers = new Array<Timer>();
 
 /**
+ * Guess what
+ */
+const activeMonitors = new Array<ProcessMonitor>();
+
+/**
  * To make the library compatible with Node
  */
 class FakeWorker<T, K> {
@@ -460,8 +465,10 @@ function selecting<T>(selector: Selector<T>, subject: Worker, transform: (messag
 
 function selectingProcessDown<T>(selector: Selector<T>, monitor: ProcessMonitor, mapping: (pd: ProcessDown) => T): Selector<T> {
     monitor.then(value => {
-        const mappedValue = mapping(value);
-        selector.postMessage(mappedValue);
+        if (activeMonitors.includes(monitor)) {
+            const mappedValue = mapping(value);
+            selector.postMessage(mappedValue);
+        }
     })
     return selector;
 }
@@ -482,7 +489,7 @@ function selectForever<T>(from: Selector<T>): Promise<T> {
 }
 
 function monitorProcess(pid: Pid): ProcessMonitor {
-    return new ProcessMonitor(resolve => {
+    const monitor = new ProcessMonitor(resolve => {
         if (pid.subject) {
             pid.subject.addEventListener('message', message => {
                 if (message.data.status === 'done') {
@@ -494,6 +501,15 @@ function monitorProcess(pid: Pid): ProcessMonitor {
             })
         }
     });
+    activeMonitors.push(monitor);
+    return monitor;
+}
+
+function demonitorProcess(monitor: ProcessMonitor): void {
+    const index = activeMonitors.indexOf(monitor);
+    if (index >= 0) {
+        activeMonitors.splice(index, 1);
+    }
 }
 
 export const process = {
@@ -527,5 +543,6 @@ export const process = {
     selectForever,
     selecting,
     selectingProcessDown,
-    monitorProcess
+    monitorProcess,
+    demonitorProcess
 };
