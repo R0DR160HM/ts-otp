@@ -147,10 +147,14 @@ Sends a message to a process and waits for a reponse within the specified time.
 const pid = process.start(foo => foo * 2);
 process.call(pid.subject!, 100, 500)
 .then(response => {
-    console.log(response); // 200
+    if (response instanceof Result.Ok) {
+        console.log(response.value); // 200
+    } else {
+        console.error(response.detail)
+    }
 })
-.catch(error => {
-    console.error(error);
+.catch(timeoutError => {
+    console.error('timeout', timeoutError);
 });
 ```
 

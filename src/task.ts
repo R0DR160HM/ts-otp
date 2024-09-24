@@ -10,15 +10,23 @@ abstract class AwaitError {
     };
 }
 
-function async<T, K>(
+async function async<T, K>(
     callback: (args: K) => T | Promise<T>,
     context: K
 ): Promise<T> {
     const pid = process.start(callback);
 
-    return process.call<K, T>(pid.subject!, context, Infinity).finally(() => {
-        process.kill(pid);
-    });
+    return new Promise((resolve, reject) => {
+        process.tryCall(pid.subject!, context, Infinity)
+            .then(resp => {
+                if (resp instanceof Result.Ok) {
+                    resolve(resp.value);
+                } else if (resp instanceof Result.Error) {
+                    reject(resp.detail)
+                }
+                process.kill(pid);
+            })
+    })
 }
 
 function awaitWithTimeout<T>(task: Promise<T>, timeout: number): Promise<T> {

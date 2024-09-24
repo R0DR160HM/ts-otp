@@ -379,17 +379,19 @@ function cancelTimer(timer: Timer) {
     return new Cancelled.TimerNotFound();
 }
 
-function receive<T>(from: Worker, timeout: number): Promise<Result<T, null>> {
-    return new Promise(resolve => {
+function receive<T>(from: Worker, timeout: number): Promise<Result<T, unknown>> {
+    return new Promise((resolve, reject) => {
 
         from.addEventListener('message', message => {
             if (message.data.status === 'ok') {
-                resolve(message.data.value);
+                resolve(new Result.Ok(message.data.value));
+            } else if (message.data.status === 'error') {
+                resolve(new Result.Error(message.data.error));
             }
-        })
+        });
 
         if (timeout !== Infinity) {
-            setTimeout(() => resolve(new Result.Error(null)), timeout);
+            setTimeout(() => reject(new Result.Error('timeout')), timeout);
         }
     });
 }
@@ -402,15 +404,15 @@ function call<T, K>(
     subject: Worker,
     makeRequest: T,
     timeout: number
-): Promise<K> {
+): Promise<Result<K, unknown>> {
     return new Promise((resolve, reject) => {
         let answered = false;
         subject.addEventListener('message', (ev) => {
             answered = true;
             if (ev.data.status === 'ok') {
-                resolve(ev.data.value);
+                resolve(new Result.Ok(ev.data.value));
             } else if (ev.data.status === 'error') {
-                reject(ev.data.error);
+                resolve(new Result.Error(ev.data.error));
             }
         });
 
@@ -444,9 +446,11 @@ function tryCall<T, K>(
 
         send(subject, makeRequest);
 
-        setTimeout(() => {
-            resolve(new Result.Error(new CallError.CallTimeout()));
-        }, timeout);
+        if (timeout !== Infinity) {
+            setTimeout(() => {
+                resolve(new Result.Error(new CallError.CallTimeout()));
+            }, timeout);
+        }
     });
 }
 
