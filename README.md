@@ -26,6 +26,14 @@ Processes are the building block for all other models, they are represented as P
 
 The Process identifier (Pid) is an object used to manage different processes. Every active process has a Pid, which contains an unique numeric ID and a reference to a Web Worker. **You should interact with neither**, and simply use the Pid object itself as an abstraction for the process.
 
+### Selector
+
+Selectos enable you to listen to messages from multiple processes, returning whichever message arrives first.
+
+### ProcessMonitor
+
+ProcessMonitors watch specific processes and notify the main process in case they exit.
+
 #### start
 
 Starts a new process with the informed code implementation and returns a new Pid.
@@ -114,6 +122,23 @@ Cancels a timed operation if it has not completed yet (see `sendAfter`).
 process.cancelTimer(myTimer);
 ```
 
+### receive
+
+Receives a message from a process
+
+```
+if (pid.subject) {
+    process.receive(pid.subject, 500)
+    .then(response => {
+        if (response instanceof Result.Ok) {
+            // do something
+        } else {
+            // timeout
+        }
+    })
+}
+```
+
 ### call
 
 Sends a message to a process and waits for a reponse within the specified time.
@@ -143,6 +168,60 @@ process.tryCall(pid.subject!, 100, 500)
         console.error(response.detail);
     }
 });
+```
+
+### select
+
+Receive a message that has been sent to current process using any of the subjects that have been added to the Selector with the `selecting` function.
+
+```
+const mySelector = new process.Selector<any>();
+/* add something to the selector */
+const response = await process.select(mySelector, 200);
+```
+
+### selectForever
+
+Similar to the `select` function but will wait forever for a message to arrive rather than timing out after a specified amount of time.
+
+```
+const mySelector = new process.Selector<any>();
+/ * add something to the selector */
+const response = await process.selectForever(mySelector);
+```
+
+### selecting
+
+Adds a new subject to a Selector and receives a mapping function to transform the value received from the subject into the value expected by the Selector.
+
+```
+let mySelector = new process.Selector<string>();
+mySelector = process.selecting(mySelector, pid.subject!, value => value.toString());
+```
+
+### monitorProcess
+
+Start monitoring a process so that when the monitored process exits a message is sent to the monitoring process.
+
+```
+const monitor = process.monitorProcess(pid);
+```
+
+### demonitorProcess
+
+Stop monitoring a process.
+
+```
+process.demonitorProcess(monitor);
+```
+
+### selectingProcessDown
+
+Adds a ProcessMonitor to a Selector (similar to the `selecting` function, but for ProcessMonitors instead of subjects).
+
+```
+let mySelector = new process.Selector<any>();
+mySelector = process.selectingProcessDown(mySelector, monitor, pd => false);
 ```
 
 ---
