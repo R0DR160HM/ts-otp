@@ -4,6 +4,7 @@ import { Result } from './result';
 const WORKER_SCRIPT = `
     var Θ__otp_pid;
     var func;
+    var state;
 
     onmessage = function(msg) {
         const data = msg.data;
@@ -11,16 +12,26 @@ const WORKER_SCRIPT = `
         const command = data.command;
         
         self.job = args[0];
+
+        function kill() {
+            Θ__otp_pid = null;
+            func = null;
+            state = null;
+            self.postMessage({ status: 'done' })
+            return;
+        }
         
         switch (command) {
             case "setup":
                 Θ__otp_pid = self.job.args;
                 func = new Function("return " + self.job.operation)();
+                state = {};
                 break;
 
             case "run":
                 try {
-                    const response = func(self.job.args);
+                    const context = { args: self.job.args, kill };
+                    const response = func(context);
                     if (response instanceof Promise) {
                         response
                             .then(function (value) {
@@ -40,9 +51,7 @@ const WORKER_SCRIPT = `
                 break;
 
             case "kill":
-                func = null;
-                Θ__otp_pid = null;
-                self.postMessage({ status: "done" });
+                kill();
                 break;
 
             default:
@@ -57,6 +66,11 @@ const WORKER_SCRIPT = `
     }
 `;
 
+interface IProcessContext<T> {
+    args: T,
+    kill: () => void;
+}
+
 /**
  * A pool containing "dead" (iddle) Workers, so that the start() function can grab one of them
  * instead of creating a new one, and thus avoiding the overhead of creating a new worker at
@@ -67,12 +81,12 @@ const subjectPool = new Array<Worker>();
 /**
  * A relational map with all the currently active Pids and their respective Processes.
  */
-const activeProcesses = new Map<Pid, Worker>();
+const activeProcesses = new Map<Pid<unknown, unknown>, Worker>();
 
 /**
  * Named Pids so that they can be more easily accessible from anywhere
  */
-const nameRegistry = new Map<string, Pid>();
+const nameRegistry = new Map<string, Pid<unknown, unknown>>();
 
 /**
  * The name is self-explanatory
@@ -90,13 +104,21 @@ const activeMonitors = new Array<ProcessMonitor>();
 class FakeWorker<T, K> {
     private listeners: any[] = [];
 
-    constructor(private implementation: (that: T) => K | Promise<K>) { }
+    private dead = false;
+
+    constructor(private implementation: (context: IProcessContext<T>) => K | Promise<K>) { }
 
     public addEventListener(_event: 'message', listener: any) {
+        if (this.dead) {
+            return;
+        }
         this.listeners.push(listener);
     }
 
     private emit(data: any) {
+        if (this.dead) {
+            return;
+        }
         for (const listener of this.listeners) {
             listener({ data });
         }
@@ -105,7 +127,11 @@ class FakeWorker<T, K> {
     public postMessage(message: { command: string; args: { args: T }[] }) {
         if (message.command === 'run') {
             try {
-                const response = this.implementation({ ...message?.args[0]?.args });
+                const args = typeof message?.args[0]?.args === 'object'
+                    ? { ...message.args[0].args }
+                    : message?.args[0]?.args;
+                const context: IProcessContext<T> = { args, kill: () => this.dead = true };
+                const response = this.implementation(context);
                 if (response instanceof Promise) {
                     response
                         .then((value) => {
@@ -168,20 +194,22 @@ abstract class ExitReason {
     }
 }
 
-class Pid {
+class Subject<T, K> extends Worker { };
+
+class Pid<T, K> {
     private static lastId = 0;
     public readonly id: number;
     constructor() {
         this.id = ++Pid.lastId;
     }
-    public get subject(): Worker | null {
+    public get subject(): Subject<T, K> | null {
         return activeProcesses.get(this) || null;
     }
 }
 
 abstract class NotRegistrable {
     public static InactiveProcess = class extends NotRegistrable {
-        constructor(public readonly pid: Pid) {
+        constructor(public readonly pid: Pid<unknown, unknown>) {
             super();
         }
     }
@@ -191,7 +219,7 @@ abstract class NotRegistrable {
         }
     }
     public static ProcessAlreadyRegistered = class extends NotRegistrable {
-        constructor(public readonly pid: Pid) {
+        constructor(public readonly pid: Pid<unknown, unknown>) {
             super();
         }
     }
@@ -227,14 +255,14 @@ class Selector<T> {
 
 class ProcessDown {
     constructor(
-        public readonly pid: Pid,
+        public readonly pid: Pid<unknown, unknown>,
         public readonly reason: ExitReason
     ) { }
 }
 
 class ProcessMonitor extends Promise<ProcessDown> { }
 
-function start<T, K>(implementation: (that: K) => T | Promise<T>): Pid {
+function start<T, K>(implementation: (context: IProcessContext<T>) => K | Promise<K>): Pid<T, K> {
     if (
         !window?.URL?.createObjectURL ||
         !window?.Worker?.prototype?.postMessage
@@ -248,7 +276,7 @@ function start<T, K>(implementation: (that: K) => T | Promise<T>): Pid {
     }
 }
 
-function _fakeStart<T, K>(implementation: (that: K) => T | Promise<T>): Pid {
+function _fakeStart<T, K>(implementation: (context: IProcessContext<T>) => K | Promise<K>): Pid<any, any> {
     const pid = new Pid();
     const worker = new FakeWorker(implementation);
     activeProcesses.set(pid, worker as any);
@@ -259,9 +287,9 @@ function _fakeStart<T, K>(implementation: (that: K) => T | Promise<T>): Pid {
  * @todo implement link
  */
 function _start<T, K>(
-    implementation: (that: K) => T | Promise<T>
+    implementation: (context: IProcessContext<T>) => K | Promise<K>
     /* link: boolean */
-): Pid {
+): Pid<T, K> {
     let blobURL: string;
     let subject = subjectPool.shift()!;
     if (!subject) {
@@ -300,7 +328,7 @@ function _start<T, K>(
     return pid;
 }
 
-function kill(pid: Pid): void {
+function kill(pid: Pid<any, any>): void {
     const subject = activeProcesses.get(pid);
     if (subject) {
         subject.onmessage = (ev) => {
@@ -316,7 +344,7 @@ function kill(pid: Pid): void {
     }
 }
 
-function register(pid: Pid, name: string): Result<null, NotRegistrable> {
+function register(pid: Pid<any, any>, name: string): Result<null, NotRegistrable> {
     if (!activeProcesses.has(pid)) {
         return new Result.Error(new NotRegistrable.InactiveProcess(pid));
     }
@@ -342,16 +370,16 @@ function unregister(name: string): Result<null, null> {
     return new Result.Error(null);
 }
 
-function named(name: string): Option<Pid> {
+function named(name: string): Option<Pid<unknown, unknown>> {
     const pid = nameRegistry.get(name);
     return Option.from(pid);
 }
 
-function isAlive(a: Pid): boolean {
+function isAlive(a: Pid<any, any>): boolean {
     return activeProcesses.has(a);
 }
 
-function send<T>(subject: Worker, message: T): void {
+function send<T>(subject: Subject<T, any>, message: T): void {
     subject.postMessage({
         command: 'run',
         args: [
@@ -362,7 +390,7 @@ function send<T>(subject: Worker, message: T): void {
     });
 }
 
-function sendAfter<T>(subject: Worker, delay: number, message: T): Timer {
+function sendAfter<T>(subject: Subject<T, any>, delay: number, message: T): Timer {
     return new Timer(delay, () => {
         send(subject, message);
     });
@@ -379,7 +407,7 @@ function cancelTimer(timer: Timer) {
     return new Cancelled.TimerNotFound();
 }
 
-function receive<T>(from: Worker, timeout: number): Promise<Result<T, unknown>> {
+function receive<K>(from: Subject<any, K>, timeout: number): Promise<Result<K, unknown>> {
     return new Promise((resolve, reject) => {
 
         from.addEventListener('message', message => {
@@ -401,14 +429,12 @@ function receive<T>(from: Worker, timeout: number): Promise<Result<T, unknown>> 
  * it will likely change in the future
  */
 function call<T, K>(
-    subject: Worker,
+    subject: Subject<T, K>,
     makeRequest: T,
     timeout: number
 ): Promise<Result<K, unknown>> {
     return new Promise((resolve, reject) => {
-        let answered = false;
         subject.addEventListener('message', (ev) => {
-            answered = true;
             if (ev.data.status === 'ok') {
                 resolve(new Result.Ok(ev.data.value));
             } else if (ev.data.status === 'error') {
@@ -420,18 +446,14 @@ function call<T, K>(
 
         if (timeout !== Infinity) {
             setTimeout(() => {
-                if (!answered) {
-                    const err = new Error('Process crashed!');
-                    reject(err);
-                    throw err;
-                }
+                reject(new Error('Process timeout!'));
             }, timeout);
         }
     });
 }
 
 function tryCall<T, K>(
-    subject: Worker,
+    subject: Subject<T, K>,
     makeRequest: T,
     timeout: number
 ): Promise<Result<K, CallError>> {
@@ -454,7 +476,7 @@ function tryCall<T, K>(
     });
 }
 
-function selecting<T>(selector: Selector<T>, subject: Worker, transform: (message: Result<unknown, unknown>) => T): Selector<T> {
+function selecting<K, T>(selector: Selector<T>, subject: Subject<any, K>, transform: (message: Result<unknown, unknown>) => T): Selector<T> {
     subject.addEventListener('message', message => {
         if (message.data.status === 'ok') {
             const value = transform(new Result.Ok(message.data.value));
@@ -492,7 +514,7 @@ function selectForever<T>(from: Selector<T>): Promise<T> {
     return new Promise(resolve => from['addListener'](resolve));
 }
 
-function monitorProcess(pid: Pid): ProcessMonitor {
+function monitorProcess(pid: Pid<any, any>): ProcessMonitor {
     const monitor = new ProcessMonitor(resolve => {
         if (pid.subject) {
             pid.subject.addEventListener('message', message => {
@@ -525,6 +547,7 @@ export const process = {
     Pid,
     ProcessDown,
     Selector,
+    Subject,
 
     NotRegistrable,
 

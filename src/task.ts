@@ -11,10 +11,10 @@ abstract class AwaitError {
 }
 
 async function async<T, K>(
-    callback: (args: K) => T | Promise<T>,
-    context: K
-): Promise<T> {
-    const pid = process.start(callback);
+    callback: (args: T) => K | Promise<K>,
+    context: T
+): Promise<K> {
+    const pid = process.start<any, any>(context => callback(context.args));
 
     return new Promise((resolve, reject) => {
         process.tryCall(pid.subject!, context, Infinity)
