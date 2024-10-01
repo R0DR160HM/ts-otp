@@ -101,12 +101,12 @@ const activeMonitors = new Array<ProcessMonitor>();
 /**
  * To make the library compatible with Node
  */
-class FakeWorker<T, K> {
+class FakeWorker<I, O> {
     private listeners: any[] = [];
 
     private dead = false;
 
-    constructor(private implementation: (context: IProcessContext<T>) => K | Promise<K>) { }
+    constructor(private implementation: (context: IProcessContext<I>) => O | Promise<O>) { }
 
     public addEventListener(_event: 'message', listener: any) {
         if (this.dead) {
@@ -124,13 +124,13 @@ class FakeWorker<T, K> {
         }
     }
 
-    public postMessage(message: { command: string; args: { args: T }[] }) {
+    public postMessage(message: { command: string; args: { args: I }[] }) {
         if (message.command === 'run') {
             try {
                 const args = typeof message?.args[0]?.args === 'object'
                     ? { ...message.args[0].args }
                     : message?.args[0]?.args;
-                const context: IProcessContext<T> = { args, kill: () => this.dead = true };
+                const context: IProcessContext<I> = { args, kill: () => this.dead = true };
                 const response = this.implementation(context);
                 if (response instanceof Promise) {
                     response
@@ -194,15 +194,15 @@ abstract class ExitReason {
     }
 }
 
-class Subject<T, K> extends Worker { };
+export class Subject<I, O> extends Worker { };
 
-class Pid<T, K> {
+class Pid<I, O> {
     private static lastId = 0;
     public readonly id: number;
     constructor() {
         this.id = ++Pid.lastId;
     }
-    public get subject(): Subject<T, K> | null {
+    public get subject(): Subject<I, O> | null {
         return activeProcesses.get(this) || null;
     }
 }
@@ -262,7 +262,7 @@ class ProcessDown {
 
 class ProcessMonitor extends Promise<ProcessDown> { }
 
-function start<T, K>(implementation: (context: IProcessContext<T>) => K | Promise<K>): Pid<T, K> {
+function start<I, O>(implementation: (context: IProcessContext<I>) => O | Promise<O>): Pid<I, O> {
     if (
         !window?.URL?.createObjectURL ||
         !window?.Worker?.prototype?.postMessage
@@ -276,7 +276,7 @@ function start<T, K>(implementation: (context: IProcessContext<T>) => K | Promis
     }
 }
 
-function _fakeStart<T, K>(implementation: (context: IProcessContext<T>) => K | Promise<K>): Pid<any, any> {
+function _fakeStart<I, O>(implementation: (context: IProcessContext<I>) => O | Promise<O>): Pid<any, any> {
     const pid = new Pid();
     const worker = new FakeWorker(implementation);
     activeProcesses.set(pid, worker as any);
@@ -286,10 +286,10 @@ function _fakeStart<T, K>(implementation: (context: IProcessContext<T>) => K | P
 /**
  * @todo implement link
  */
-function _start<T, K>(
-    implementation: (context: IProcessContext<T>) => K | Promise<K>
+function _start<I, O>(
+    implementation: (context: IProcessContext<I>) => O | Promise<O>
     /* link: boolean */
-): Pid<T, K> {
+): Pid<I, O> {
     let blobURL: string;
     let subject = subjectPool.shift()!;
     if (!subject) {
@@ -428,11 +428,11 @@ function receive<K>(from: Subject<any, K>, timeout: number): Promise<Result<K, u
  * Intentionally diverges from specification,
  * it will likely change in the future
  */
-function call<T, K>(
-    subject: Subject<T, K>,
-    makeRequest: T,
+function call<I, O>(
+    subject: Subject<I, O>,
+    makeRequest: I,
     timeout: number
-): Promise<Result<K, unknown>> {
+): Promise<Result<O, unknown>> {
     return new Promise((resolve, reject) => {
         subject.addEventListener('message', (ev) => {
             if (ev.data.status === 'ok') {
@@ -452,11 +452,11 @@ function call<T, K>(
     });
 }
 
-function tryCall<T, K>(
-    subject: Subject<T, K>,
-    makeRequest: T,
+function tryCall<I, O>(
+    subject: Subject<I, O>,
+    makeRequest: I,
     timeout: number
-): Promise<Result<K, CallError>> {
+): Promise<Result<O, CallError>> {
     return new Promise((resolve) => {
         subject.addEventListener('message', (ev) => {
             if (ev.data.status === 'ok') {

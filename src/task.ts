@@ -10,10 +10,10 @@ abstract class AwaitError {
     };
 }
 
-async function async<T, K>(
-    callback: (args: T) => K | Promise<K>,
-    context: T
-): Promise<K> {
+async function async<I, O>(
+    callback: (args: I) => O | Promise<O>,
+    context: I
+): Promise<O> {
     const pid = process.start<any, any>(context => callback(context.args));
 
     return new Promise((resolve, reject) => {
