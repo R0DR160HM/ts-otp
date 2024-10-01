@@ -13,10 +13,10 @@ export namespace task {
     }
 
     export async function async<I, O>(
-        callback: (args: I) => O | Promise<O>,
+        callback: (args: { args: I }) => O | Promise<O>,
         context: I
     ): Promise<O> {
-        const pid = process.start<any, any>(context => callback(context.args));
+        const pid = process.start<any, any>(callback);
 
         return new Promise((resolve, reject) => {
             process.tryCall(pid.subject!, context, Infinity)
@@ -31,7 +31,7 @@ export namespace task {
         })
     }
 
-    export function await<T>(task: Promise<T>, timeout: number): Promise<T> {
+    export function awaitWithTimeout<T>(task: Promise<T>, timeout: number): Promise<T> {
         return new Promise((resolve, reject) => {
             setTimeout(reject, timeout);
             task.then(resolve).catch(reject);

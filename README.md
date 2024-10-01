@@ -236,18 +236,18 @@ Tasks represent simple functions which can only receive inputs once and only out
 
 #### async
 
-Spawn a task process that calls a given function in order to perform some work. The result of this function is send back to the parent and can be received using the `await` function.
+Spawn a task process that calls a given function in order to perform some work. The result of this function is send back to the parent and can be received using the `awaitWithTimeout` function.
 
 ```
 const myTask = task.async(foo => foo * 2, 100);
 ```
 
-#### await
+#### awaitWithTimeout
 
 Wait for the value computed by a task. If the a value is not received before the timeout has elapsed or if the task process crashes then this function rejects.
 
 ```
-task.await(myTask, 500)
+task.awaitWithTimeout(myTask, 500)
 .then(response => console.log(response)) // 200
 .catch(error => console.error(error));
 ```
