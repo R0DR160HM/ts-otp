@@ -39,7 +39,7 @@ ProcessMonitors watch specific processes and notify the main process in case the
 Starts a new process with the informed code implementation and returns a new Pid.
 
 ```
-const pid = process.start(foo => foo * 2);
+const pid = process.start(foo => foo.args * 2);
 ```
 
 ### kill
@@ -144,7 +144,7 @@ if (pid.subject) {
 Sends a message to a process and waits for a reponse within the specified time.
 
 ```
-const pid = process.start(foo => foo * 2);
+const pid = process.start(foo => foo.args * 2);
 process.call(pid.subject!, 100, 500)
 .then(response => {
     if (response instanceof Result.Ok) {
@@ -163,7 +163,7 @@ process.call(pid.subject!, 100, 500)
 Sends a message to a process and waits for a response within the specified time. Unlike `call`, with this function the Promise is guaranteed to resolve, even if with an error.
 
 ```
-const pid = process.start(foo => foo * 2);
+const pid = process.start(foo => foo.args * 2);
 process.tryCall(pid.subject!, 100, 500)
 .then(response => {
     if (response instanceof Result.Ok) {
@@ -239,7 +239,7 @@ Tasks represent simple functions which can only receive inputs once and only out
 Spawn a task process that calls a given function in order to perform some work. The result of this function is send back to the parent and can be received using the `awaitWithTimeout` function.
 
 ```
-const myTask = task.async(foo => foo * 2, 100);
+const myTask = task.async(foo => foo.args * 2, 100);
 ```
 
 #### awaitWithTimeout
